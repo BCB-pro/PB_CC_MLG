@@ -1,0 +1,751 @@
+---
+title: "Analyse démographique"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE, message=FALSE, results='hide'}
+# Librairies --------------------------------------------------------------
+
+library(openxlsx)
+library(tidyverse)
+library(ggpubr)
+library(MASS)
+library(kableExtra)
+library(pander)
+library(interactions)
+
+# Importation des data ----------------------------------------------------
+
+
+data1 <- read.xlsx("/home/baptiste.criniere/Documents/PB_CC_MLG/Data/database EME.xlsx",
+                   sheet = 1, na.strings = c("NA", "ND"))
+data2 <- read.xlsx("/home/baptiste.criniere/Documents/PB_CC_MLG/Data/database EME.xlsx",
+                   sheet = 2, na.strings = c("NA", "ND"))
+data3 <- read.xlsx("/home/baptiste.criniere/Documents/PB_CC_MLG/Data/database EME.xlsx",
+                   sheet = 3)
+
+# Data management ---------------------------------------------------------
+# Variables absentes dans data2 : 
+# DMS_rea_neuro, Duree_EEG, Nb_ttt_AE_habituel, Nb_ttts_AE_entree, 
+# Nb_ttts_AE_sortie
+names(data1)
+names(data2)
+names(data3)
+
+var1 <- c("Id", "Sexe", "Age", "ATCDT", "DMS_rea_neuro", "DMS_rea","Duree_EME", "Severite_EME",
+          "Groupe_EME", "Etiologie_EME", "Duree_EEG", "Nb_ttt_AE_habituel",
+          "Nb_ttts_AE_entree", "Nb_ttts_AE_sortie", 
+          "GOS_t0", "Rankin_t0", "GOS_sortie", "Rankin_sortie", "GOS_M6", "Rankin_M6",
+          "DCD")
+var2 <- c("Id", "Sexe", "Age", "ATCDT", "DMS_rea","Duree_EME", "Severite_EME",
+          "Groupe_EME", "Etiologie_EME", "Nb_AED_sortie",
+          "GOS_t0", "Rankin_t0", "GOS_sortie", "Rankin_sortie", "GOS_M6", "Rankin_M6",
+          "DCD")
+var3 <- c("Id", "Sexe", "Age", "ATCDT","Duree_EEG", "Severite_EME",
+          "Groupe_EME", "Etiologie_EME")
+names(data1) <- var1
+names(data2) <- var2
+names(data3) <- var3
+
+
+
+# On supprime la dernière ligne qui est vide
+data1 <- data1 %>%
+  filter(Id != 12)
+
+# On ajoute 13 à id de data2 pour que les patients aient un id unique
+data2 <- data2 %>%
+  mutate(Id = Id + 13)
+
+# On ajoute 83 à id de data3 pour que les patients aient un id unique
+data3 <- data3 %>%
+  mutate(Id = Id + 83) %>% 
+  mutate(Sexe = as.numeric(Sexe)) %>% 
+  mutate(Age = as.numeric(Age))
+
+
+
+# On crée deux bases de données
+df <- dplyr::bind_rows(data1, data2, data3)
+df <- df %>% 
+  mutate(Group = ifelse(Id<=12, 1, 0))
+df <- df %>% 
+  dplyr::select(-Etiologie_EME)
+
+
+
+
+# On conserve uniquement les variables communes aux deux bases
+data1 <- data1 %>% 
+  dplyr::select(-DMS_rea_neuro, -Duree_EEG, - Nb_ttt_AE_habituel,
+         -Nb_ttts_AE_entree, -Nb_ttts_AE_sortie)
+data2 <- data2 %>% 
+  dplyr::select(-Nb_AED_sortie)
+
+# On fusionne les deux bases de données
+data <-  rbind(data1, data2)
+
+# On indique le groupe
+data <- data %>% 
+  mutate(Group = ifelse(Id <= 12, 1, 0))
+
+# On supprime les variables qu'on ne peut pas analyse
+unique(data$Etiologie_EME)
+data <- data %>% 
+  dplyr::select(-Etiologie_EME)
+
+# Convertir les variables dans le bon format
+str(data)
+
+data <- data %>% 
+  dplyr::mutate(Id = factor(Id)) %>% 
+  dplyr::mutate(Sexe = Sexe %>% 
+                  factor() %>% 
+                  forcats::fct_recode("F" = "1",
+                              "H" = "0")) %>% 
+  dplyr::mutate(ATCDT = ATCDT %>%
+                  factor() %>%
+                  forcats::fct_recode("Epilepsie" = "1",
+                               "Non Epilepsie" = "0")) %>%
+  dplyr::mutate(Groupe_EME = Groupe_EME %>%
+                  factor()) %>%
+  # dplyr::mutate(Rankin_t0 = Rankin_t0 %>%
+  #                 factor(ordered = TRUE)) %>%
+  # dplyr::mutate(Rankin_sortie = Rankin_sortie %>%
+  #                 factor(ordered = TRUE)) %>%
+  dplyr::mutate(GOS_M6 = GOS_M6 %>%
+                  factor(ordered = TRUE)) %>%
+  dplyr::mutate(Rankin_M6 = Rankin_M6 %>%
+                  factor(ordered = TRUE)) %>%
+  dplyr::mutate(DCD = factor(DCD)) %>%
+  dplyr::mutate(Group = Group %>%
+                  factor() %>%
+                  forcats::fct_recode("Cas" = "1",
+                                      "Control" = "0"))
+glimpse(data)
+
+
+
+```
+
+# Analyse 1 
+
+## Analyse des données générales 
+
+#### La variable age
+L'âge moyen du groupe des cas est de 31 ans (écart-type 16) et l'âge du groupe des contrôles est de 52 ans (écart type 16). 
+
+```{r echo=FALSE, message=FALSE}
+data %>%
+  group_by(Group) %>%
+  get_summary_stats(Age, type = "mean_sd") %>% 
+  kable(format = "latex", booktabs = T) %>% 
+  kable_styling(position = "center", latex_options = "HOLD_position")
+```
+
+```{r echo=FALSE, message=FALSE, results = 'hide'}
+# Test de Wilcoxon : https://www.datanovia.com/en/fr/lessons/test-de-wilcoxon-dans-r/
+# Test de Student : https://www.datanovia.com/en/fr/lessons/test-t-dans-r/
+# Age : différence significative d'âge entre les deux groupes
+t.test(Age ~ Group, data)
+wilcox.test(Age ~ Group, data)
+```
+
+Afin de comparer l'âge entre les deux groupes (les cas et les contrôles), on va réaliser un test de comparaison de moyennes pour échantillons indépendants. Pour cela on procède à un test de Wilcoxon.
+\
+Dans notre cas la p-valeur associée à ce test vaut 0.0003, par conséquent on conclut que la différence d'âge entre le groupe des cas et celles des contrôles est statistiquement significative.
+
+```{r echo=FALSE, message=FALSE, fig.align='center', out.width="60%"}
+bxp <- ggboxplot(
+  data, x = "Group", y = "Age", color = "Group",
+  ylab = "Age", xlab = "Groups", add = "jitter"
+) + stat_compare_means(vjust = -0.4, hjust = -0.5)
+bxp
+```
+
+
+\newpage
+
+#### La variable sexe
+Parmi les cas il y a 3 femmes (25%) et 9 hommes (75%) ; et chez les contrôles il y a 31 femmes (44%) et 39 hommes (56%).
+
+```{r, echo=FALSE, message=FALSE, results='hide'}
+mytable <- table(data$Sexe, data$Group)
+dimnames(mytable) <- list(Sexe = c("H","F"), Group =c("Controle","Cas"))
+fisher.test(mytable)
+```
+
+
+```{r, echo=FALSE}
+mytable %>%
+  kbl(caption = "Tableau de contingence") %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>% 
+  kable_styling(latex_options = "HOLD_position")
+```
+
+On réalise un test exacte de Fisher afin de savoir s'il existe un lien statistiquement significatif entre le sexe et le fait d'être un cas ou un contrôle. On cherche à répondre à la question, a-ton plus de chance d'être un cas si l'on est un homme plutôt qu'une femme ?
+\
+La p-valeur associée à ce test est de 0.34 (elle n'est pas inférieure au seuil de 5%), il n'y a donc pas de lien statistiquement significatif entre le sexe et le groupe.
+
+```{r, echo=FALSE, fig.align='center', out.width="40%"}
+df <- data.frame(Groupe = c("Contrôle", "Contrôle", "Cas", "Cas"), Sexe = c("H", "F", "H", "F"),
+                 Effectif = c(56, 44, 75, 25),
+                 label_ypos = c(10, 95, 10, 80)
+)
+ggbarplot(
+  df, x = "Groupe", y = "Effectif", 
+  add.params = list(shape = "supp"),
+  fill= "Sexe", palette = c("#807F7F", "#BF504D"),
+  position = position_dodge(0.8)
+) + xlab("Groupe") + ylab("Effectif (%)")+ labs(fill = "Sexe") +
+  annotate("text", x=1.5, y=80, label= "p = 0.34")
+```
+
+#### La variable ATCDT
+On cherche à savoir s'il existe un lien le groupe et la variable ATCDT, pour cela on va de nouveau réaliser un test exacte de Fisher comme dans la section précédente. \
+La p-valeur est de 0.36, donc il n'y a pas de différence significative.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+mytable <- table(data$ATCDT, data$Group)
+dimnames(mytable) <- list(ATCDT = c("Non Epilepsie","Epilepsie"), Group =c("Contrôle","Cas"))
+fisher.test(mytable)
+```
+
+```{r, echo=FALSE}
+mytable %>%
+  kbl(caption = "Tableau de contingence") %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>% 
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r, echo=FALSE, fig.align='center', out.width="40%"}
+df <- data.frame(Groupe = c("Contrôle", "Contrôle", "Cas", "Cas"), ATCDT = c("Non Epilepsie", "Epilepsie", "Non Epilepsie", "Epilepsie"),
+                 Effectif = c(51, 49, 67, 33),
+                 label_ypos = c(10, 95, 10, 80)
+)
+ggbarplot(
+  df, x = "Groupe", y = "Effectif", 
+  add.params = list(shape = "supp"),
+  fill= "ATCDT", palette = c("#807F7F", "#BF504D"),
+  position = position_dodge(0.8)
+) + xlab("Groupe") + ylab("Effectif (%)")+ labs(fill = "ATCDT") +
+  annotate("text", x=1.5, y=80, label= "p = 0.36")
+```
+\newpage
+
+## Analyse des facteurs de gravité de mal neurologique
+
+#### La variable Durée EME
+Le groupe des contrôles a une moyenne de durée EME de 9.8 avec un écart-type de 21, et le groupe des cas a lui une moyenne de 75 et un écart type de 83.
+```{r echo=FALSE, message=FALSE}
+data %>%
+  group_by(Group) %>%
+  get_summary_stats(Duree_EME, type = "mean_sd") %>% 
+  kable(format = "latex", booktabs = T) %>% 
+  kable_styling(position = "center", latex_options = "HOLD_position")
+```
+
+On cherche à savoir s'il existe un lien statistiquement significatif entre la variable durée EME et le groupe (cas ou contrôle). Pour cela, on réalise un test de Wilcoxon comme dans la section âge. On obtient une p-valeur égale à 2e-06 (inférieure au seuil 5%), il y a donc un lien statistiquement significatif entre le groupe et la durée EME. 
+
+```{r echo=FALSE, message=FALSE, results = 'hide'}
+# Test de Wilcoxon : https://www.datanovia.com/en/fr/lessons/test-de-wilcoxon-dans-r/
+# Test de Student : https://www.datanovia.com/en/fr/lessons/test-t-dans-r/
+# Age : différence significative d'âge entre les deux groupes
+# t.test(Duree_EME ~ Group, data)
+wilcox.test(Duree_EME ~ Group, data)
+```
+
+```{r echo=FALSE, message=FALSE, fig.align='center', out.width="60%"}
+bxp <- ggboxplot(
+  data, x = "Group", y = "Duree_EME", color = "Group",
+  ylab = "Durée EME", xlab = "Groups", add = "jitter"
+) + stat_compare_means(vjust = -0.4, hjust = -0.5)
+bxp
+```
+
+
+#### La variable severite EME
+L'ensemble des cas a un statut de sévérité qui vaut 3, tandis que les contrôles sont réparties dans les quatre indices de sévérité.
+
+```{r echo=FALSE, message=FALSE, results = 'hide'}
+mytable <- table(data$Severite_EME, data$Group)
+fisher.test(mytable)
+```
+
+
+```{r, echo=FALSE}
+mytable %>%
+  kbl(caption = "Tableau de contingence") %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>% 
+  kable_styling(latex_options = "HOLD_position")
+```
+
+
+\newpage
+
+
+#### La variable Durée du séjour en réanimation
+La durée moyenne de séjour en réanimation est de 20 jours (écart-type de 26) pour le groupe des contrôles, et de 94.5 jours (écart-type de 82) pour le groupe des cas.
+```{r echo=FALSE, message=FALSE}
+data %>%
+  group_by(Group) %>%
+  get_summary_stats(DMS_rea, type = "mean_sd") %>% 
+  kable(format = "latex", booktabs = T) %>% 
+  kable_styling(position = "center", latex_options = "HOLD_position")
+```
+
+On cherche à savoir s'il existe un lien statistiquement significatif entre la variable durée en réanimation (DMS_rea) et le groupe (cas ou contrôle). Pour cela, on réalise un test de Wilcoxon. On obtient une p-valeur égale à 1e-05 (inférieure au seuil 5%), il y a donc un lien statistiquement significatif entre le groupe et la durée en réanimation. 
+
+```{r echo=FALSE, message=FALSE, results = 'hide'}
+# Test de Wilcoxon : https://www.datanovia.com/en/fr/lessons/test-de-wilcoxon-dans-r/
+# Test de Student : https://www.datanovia.com/en/fr/lessons/test-t-dans-r/
+# Age : différence significative d'âge entre les deux groupes
+# t.test(Duree_EME ~ Group, data)
+wilcox.test(DMS_rea ~ Group, data)
+```
+
+```{r echo=FALSE, message=FALSE, fig.align='center', out.width="60%"}
+bxp <- ggboxplot(
+  data, x = "Group", y = "DMS_rea", color = "Group",
+  ylab = "Durée EME", xlab = "Groups", add = "jitter"
+) + stat_compare_means(vjust = -0.4, hjust = -0.5)
+bxp
+```
+
+\newpage
+
+## Analyses des facteurs pronostics
+#### Décès
+On obtient une p-valeur égale à 0.5 (supérieure au seuil 5%), il n'y a donc pas de lien statistiquement significatif entre le groupe et le fait d'être décédé.
+```{r echo=FALSE, message=FALSE, results = 'hide'}
+mytable <- table(data$DCD, data$Group)
+fisher.test(mytable)
+```
+
+```{r, echo=FALSE}
+mytable %>%
+  kbl(caption = "Tableau de contingence") %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>% 
+  kable_styling(latex_options = "HOLD_position")
+```
+
+### Scores
+#### GOS
+On cherche à savoir s'il y a une corrélation entre le groupe et le statut fonctionnel évalué par le score GOS. Pour cela, on construit une nouvelle variable qui correspond à la différence de score GOS pour chaque patient entre sa sortie et son entrée. On réalise un modèle logistique en mettant en variable à expliquer le groupe, et en variable explicative la différence de GOS ainsi que le GOS en entré.
+\
+On obtient qu'il existe un lien significatif entre le fait d'appartenir au groupe et la différence de GOS. Plus la différence est négative plus il y a de chance que l'individu appartiennent au groupe des cas.
+```{r echo=FALSE, message=FALSE, results = 'hide'}
+# http://www.jybaudot.fr/Inferentielle/mcnemar.html
+# http://www.jybaudot.fr/Inferentielle/cochran.html
+# https://www.sheffield.ac.uk/polopoly_fs/1.885110!/file/60_McNemar.pdf
+# Construction du tableau de contingence
+data <- data %>% 
+  dplyr::mutate(delta_GOS = as.numeric(GOS_sortie)- as.numeric(GOS_t0))
+# mod <- lm(formula = delta_GOS ~ Group + GOS_t0, data = data)
+# summary(mod)
+mod <- glm(formula = Group ~ delta_GOS + GOS_t0, data = data, family = binomial(link = "logit"))
+summary(mod)
+```
+
+
+#### Rankin
+On cherche à savoir s'il y a une corrélation entre le groupe et le statut fonctionnel évalué par le score mRANKIN. Pour cela, on construit une nouvelle variable qui correspond à la différence de score mRANKIN pour chaque patient entre sa sortie et son entrée. On réalise un modèle logistique en mettant en variable à expliquer le groupe, et en variable explicative la différence de mRANKIN ainsi que le mRANKIN en entré. \
+On obtient qu'il existe un lien significatif entre le fait d'appartenir au groupe et la différence de mRANKIN. Plus la différence est négative plus il y a de chance que l'individu appartiennent au groupe des cas.
+```{r echo=FALSE, message=FALSE, results = 'hide'}
+# http://www.jybaudot.fr/Inferentielle/mcnemar.html
+# http://www.jybaudot.fr/Inferentielle/cochran.html
+# https://www.sheffield.ac.uk/polopoly_fs/1.885110!/file/60_McNemar.pdf
+# Construction du tableau de contingence
+data <- data %>% 
+  dplyr::mutate(delta_RANKIN = as.numeric(Rankin_t0)- as.numeric(Rankin_sortie))
+# mod <- lm(formula = delta_GOS ~ Group + GOS_t0, data = data)
+# summary(mod)
+mod <- glm(formula = Group ~ delta_RANKIN, data = data, family = binomial(link = "logit"))
+summary(mod)
+```
+
+\newpage
+
+## Table résumée
+```{r echo=FALSE, message=FALSE, warning= FALSE}
+data %>% 
+  furniture::table1("Age" = Age,
+                    "Sexe" = Sexe,
+                    "ATCDT" = ATCDT,
+                    "DCD" = DCD,
+                    "Durée Réa" = DMS_rea,
+                    "Durée EME" = Duree_EME,
+                    "Severité EME" = Severite_EME,
+                    "Groupe EME" = Groupe_EME,
+                    "Différence GOS" = delta_GOS,
+                    "Différence mRankin" = delta_RANKIN,
+                    splitby = ~Group,
+                    test   = TRUE,
+                    output = "markdown")
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+# Librairies --------------------------------------------------------------
+
+library(openxlsx)
+library(tidyverse)
+library(ggpubr)
+library(MASS)
+library(kableExtra)
+library(pander)
+library(interactions)
+
+# Importation des data ----------------------------------------------------
+
+
+data1 <- read.xlsx("/home/baptiste.criniere/Documents/PB_CC_MLG/Data/database EME.xlsx",
+                   sheet = 1, na.strings = c("NA", "ND"))
+data2 <- read.xlsx("/home/baptiste.criniere/Documents/PB_CC_MLG/Data/database EME.xlsx",
+                   sheet = 2, na.strings = c("NA", "ND"))
+data3 <- read.xlsx("/home/baptiste.criniere/Documents/PB_CC_MLG/Data/database EME.xlsx",
+                   sheet = 3)
+
+# Data management ---------------------------------------------------------
+# Variables absentes dans data2 : 
+# DMS_rea_neuro, Duree_EEG, Nb_ttt_AE_habituel, Nb_ttts_AE_entree, 
+# Nb_ttts_AE_sortie
+names(data1)
+names(data2)
+names(data3)
+var1 <- c("Id", "Sexe", "Age", "ATCDT", "DMS_rea_neuro", "DMS_rea","Duree_EME", "Severite_EME",
+          "Groupe_EME", "Etiologie_EME", "Duree_EEG", "Nb_ttt_AE_habituel",
+          "Nb_ttts_AE_entree", "Nb_ttts_AE_sortie", 
+          "GOS_t0", "Rankin_t0", "GOS_sortie", "Rankin_sortie", "GOS_M6", "Rankin_M6",
+          "DCD")
+var2 <- c("Id", "Sexe", "Age", "ATCDT", "DMS_rea","Duree_EME", "Severite_EME",
+          "Groupe_EME", "Etiologie_EME", "Nb_AED_sortie",
+          "GOS_t0", "Rankin_t0", "GOS_sortie", "Rankin_sortie", "GOS_M6", "Rankin_M6",
+          "DCD")
+var3 <- c("Id", "Sexe", "Age", "ATCDT","Duree_EEG", "Severite_EME",
+          "Groupe_EME", "Etiologie_EME")
+names(data1) <- var1
+names(data2) <- var2
+names(data3) <- var3
+
+
+
+# On supprime la dernière ligne qui est vide
+data1 <- data1 %>%
+  filter(Id != 12)
+
+# On ajoute 13 à id de data2 pour que les patients aient un id unique
+data2 <- data2 %>%
+  mutate(Id = Id + 13)
+
+# On ajoute 83 à id de data3 pour que les patients aient un id unique
+data3 <- data3 %>%
+  mutate(Id = Id + 83) %>% 
+  mutate(Sexe = as.numeric(Sexe)) %>% 
+  mutate(Age = as.numeric(Age))
+
+
+
+# On crée deux bases de données
+df <- dplyr::bind_rows(data1, data2, data3)
+df <- df %>% 
+  mutate(Group = ifelse(Id<=12, 1, 0))
+df <- df %>% 
+  dplyr::select(-Etiologie_EME)
+```
+
+# Analyse 2
+
+## Analyse des données générales
+
+####  La variable Sexe
+La p-valeur associée au test exacte Fisher 0.22 (elle n'est inférieure pas au seuil de 5%), il n'y a donc pas de lien statistiquement significatif entre le sexe et le groupe.
+```{r, echo=FALSE, message=FALSE, results='hide'}
+mytable <- table(df$Sexe, df$Group)
+dimnames(mytable) <- list(Sexe = c("H","F"), Group =c("Controle","Cas"))
+fisher.test(mytable)
+```
+
+```{r, echo=FALSE}
+mytable %>%
+  kbl(caption = "Tableau de contingence") %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>% 
+  kable_styling(latex_options = "HOLD_position")
+```
+
+#### La variable Age
+Dans notre cas la p-valeur associée au test de Wilcoxon vaut 0.0001, par conséquent on conclut que la différence d'âge entre le groupe des cas et celles des contrôles est statistiquement significative.
+```{r echo=FALSE, message=FALSE}
+df %>%
+  dplyr::group_by(Group) %>%
+  get_summary_stats(Age, type = "mean_sd") %>% 
+  kable(format = "latex", booktabs = T) %>%
+  kable_styling(position = "center", latex_options = "HOLD_position")
+```
+
+```{r echo=FALSE, message=FALSE, results = 'hide'}
+# Test de Wilcoxon : https://www.datanovia.com/en/fr/lessons/test-de-wilcoxon-dans-r/
+# Test de Student : https://www.datanovia.com/en/fr/lessons/test-t-dans-r/
+# Age : différence significative d'âge entre les deux groupes
+t.test(Age ~ Group, df)
+wilcox.test(Age ~ Group, df)
+```
+
+```{r echo=FALSE, message=FALSE, fig.align='center', out.width="60%", warning=FALSE}
+bxp <- ggboxplot(
+  df, x = "Group", y = "Age", color = "Group",
+  ylab = "Age", xlab = "Groups", add = "jitter"
+) + stat_compare_means(vjust = -0.4, hjust = -0.5)
+bxp
+```
+
+\newpage
+
+#### La variable ATCDT
+On cherche à savoir s'il existe un lien le groupe et la variable ATCDT, pour cela on va de nouveau réaliser un test exacte de Fisher comme dans la section précédente. \
+La p-valeur est de 0.7615, donc il n'y a pas de différence significative.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+mytable <- table(df$ATCDT, df$Group)
+dimnames(mytable) <- list(ATCDT = c("Non Epilepsie","Epilepsie"), Group =c("Contrôle","Cas"))
+fisher.test(mytable)
+```
+
+```{r, echo=FALSE}
+mytable %>%
+  kbl(caption = "Tableau de contingence") %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>% 
+  kable_styling(latex_options = "HOLD_position")
+```
+
+
+
+## Analyse des facteurs de gravité de mal neurologique
+
+#### La variable sévérite EME
+L'ensemble des cas a un statut de sévérité qui vaut 3, tandis que les contrôles sont réparties dans les quatre indices de sévérité.
+
+```{r echo=FALSE, message=FALSE, results = 'hide'}
+mytable <- table(df$Severite_EME, df$Group)
+fisher.test(mytable)
+```
+
+
+```{r, echo=FALSE}
+mytable %>%
+  kbl(caption = "Tableau de contingence") %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>% 
+  kable_styling(latex_options = "HOLD_position")
+```
+
+
+#### La variable Durée EEG
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+df %>%
+  group_by(Group) %>%
+  get_summary_stats(Duree_EEG, type = "mean_sd") %>% 
+  kable(format = "latex", booktabs = T) %>% 
+  kable_styling(position = "center", latex_options = "HOLD_position")
+```
+
+On cherche à savoir s'il existe un lien statistiquement significatif entre la variable durée EEG et le groupe (cas ou contrôle). Pour cela, on réalise un test de Wilcoxon. On obtient une p-valeur égale à 8e-07 (inférieure au seuil 5%), il y a donc un lien statistiquement significatif entre le groupe et la durée EME. 
+
+```{r echo=FALSE, message=FALSE, results = 'hide', warning=FALSE}
+# Test de Wilcoxon : https://www.datanovia.com/en/fr/lessons/test-de-wilcoxon-dans-r/
+# Test de Student : https://www.datanovia.com/en/fr/lessons/test-t-dans-r/
+# Age : différence significative d'âge entre les deux groupes
+# t.test(Duree_EME ~ Group, data)
+wilcox.test(Duree_EEG ~ Group, df)
+```
+
+```{r echo=FALSE, message=FALSE, fig.align='center', out.width="60%", warning=FALSE}
+bxp <- ggboxplot(
+  df, x = "Group", y = "Duree_EEG", color = "Group",
+  ylab = "Durée EME", xlab = "Groups", add = "jitter"
+) + stat_compare_means(vjust = -0.4, hjust = -0.5)
+bxp
+```
+
+#### La variable groupe EME
+La pvaleur associée au test exacte de Fisher est de 0.13 (elle n'est pas inférieure au seuil de 5%), donc a priori il n'y a pas de lien statistiquement significatif entre le groupe et le groupe EME.
+```{r echo=FALSE, message=FALSE, results = 'hide', warning=FALSE}
+ unique(df$Groupe_EME)
+
+df <- df %>% 
+  mutate(Groupe_EME = ifelse(Groupe_EME %in% c("Remote ", "remote", "Remote"), "Remote", Groupe_EME)) %>% 
+  mutate(Groupe_EME = ifelse(Groupe_EME  %in% c("progressif", "Progressif"), "Progressif", Groupe_EME)) %>% 
+  mutate(Groupe_EME = ifelse(Groupe_EME  %in% c("acute", "Acute"), "Acute", Groupe_EME)) %>% 
+  mutate(Groupe_EME = ifelse(Groupe_EME  %in% c("Non classé", "non classé"), "Non classé", Groupe_EME)) %>% 
+  mutate(Groupe_EME = ifelse(Groupe_EME  %in% c("Toxic", "Toxic / Metabolic", "toxic / metabolic",
+                                                "toxic/metabolic"), "Toxic", Groupe_EME))
+
+
+mytable <- table(df$Groupe_EME, df$Group)
+fisher.test(mytable)
+dimnames(mytable) <- list(Groupe_EME = c("Acute", "Non classé", "Progressif", "Remote", "Toxic"), Group =c("Controle","Cas"))
+
+```
+
+
+```{r, echo=FALSE}
+mytable %>%
+  kbl(caption = "Tableau de contingence") %>%
+  kable_classic(full_width = F, html_font = "Cambria") %>% 
+  kable_styling(latex_options = "HOLD_position")
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+# Librairies --------------------------------------------------------------
+
+library(openxlsx)
+library(tidyverse)
+library(ggpubr)
+library(MASS)
+library(kableExtra)
+library(pander)
+library(interactions)
+
+# Importation des data ----------------------------------------------------
+
+
+data1 <- read.xlsx("/home/baptiste.criniere/Documents/PB_CC_MLG/Data/database EME.xlsx",
+                   sheet = 1, na.strings = c("NA", "ND"))
+data2 <- read.xlsx("/home/baptiste.criniere/Documents/PB_CC_MLG/Data/database EME.xlsx",
+                   sheet = 2, na.strings = c("NA", "ND"))
+data3 <- read.xlsx("/home/baptiste.criniere/Documents/PB_CC_MLG/Data/database EME.xlsx",
+                   sheet = 3)
+
+# Data management ---------------------------------------------------------
+# Variables absentes dans data2 : 
+# DMS_rea_neuro, Duree_EEG, Nb_ttt_AE_habituel, Nb_ttts_AE_entree, 
+# Nb_ttts_AE_sortie
+names(data1)
+names(data2)
+names(data3)
+var1 <- c("Id", "Sexe", "Age", "ATCDT", "DMS_rea_neuro", "DMS_rea","Duree_EME", "Severite_EME",
+          "Groupe_EME", "Etiologie_EME", "Duree_EEG", "Nb_ttt_AE_habituel",
+          "Nb_ttts_AE_entree", "Nb_ttts_AE_sortie", 
+          "GOS_t0", "Rankin_t0", "GOS_sortie", "Rankin_sortie", "GOS_M6", "Rankin_M6",
+          "DCD")
+var2 <- c("Id", "Sexe", "Age", "ATCDT", "DMS_rea","Duree_EME", "Severite_EME",
+          "Groupe_EME", "Etiologie_EME", "Nb_ttts_AE_sortie",
+          "GOS_t0", "Rankin_t0", "GOS_sortie", "Rankin_sortie", "GOS_M6", "Rankin_M6",
+          "DCD")
+var3 <- c("Id", "Sexe", "Age", "ATCDT","Duree_EEG", "Severite_EME",
+          "Groupe_EME", "Etiologie_EME")
+names(data1) <- var1
+names(data2) <- var2
+names(data3) <- var3
+
+
+
+# On supprime la dernière ligne qui est vide
+data1 <- data1 %>%
+  filter(Id != 12)
+
+# On ajoute 13 à id de data2 pour que les patients aient un id unique
+data2 <- data2 %>%
+  mutate(Id = Id + 13)
+
+# On ajoute 83 à id de data3 pour que les patients aient un id unique
+data3 <- data3 %>%
+  mutate(Id = Id + 83) %>% 
+  mutate(Sexe = as.numeric(Sexe)) %>% 
+  mutate(Age = as.numeric(Age))
+
+
+
+# On crée deux bases de données
+df <- dplyr::bind_rows(data1, data2, data3)
+df <- df %>% 
+  mutate(Group = ifelse(Id<=12, 1, 0))
+
+df <- df %>% 
+    mutate(Group = as.character(Group) %>% 
+           factor() %>% 
+           fct_recode("With CS" = "1", "Without CS" = "0"))
+df <- df %>% 
+  dplyr::select(-Etiologie_EME)
+```
+
+# Analyse 3
+
+
+## Analyses des facteurs pronostics
+
+#### Nb AED sortie
+The p-value associated with the Wilcoxon test is 0.001. There is therefore a significant difference between the two groups for this variable.
+```{r echo=FALSE, message=FALSE, warning=FALSE, results = 'hide'}
+wilcox.test(Nb_ttts_AE_sortie ~ Group, df)
+```
+
+```{r echo=FALSE, message=FALSE, fig.align='center', out.width="60%", warning=FALSE}
+bxp <- ggboxplot(
+  df, x = "Group", y = "Nb_ttts_AE_sortie", color = "Group",
+  ylab = "AEDs anti-epileptic drugs", xlab = "Groups", add = "jitter"
+) + stat_compare_means(vjust = -0.4, hjust = -0.5)
+bxp
+```
+
+#### GOSM6
+Finalement j'ai juste fait un test de Wilcoxon. \
+La pvaleur associé au test de Wilcoxon est de 0.06.
+```{r echo=FALSE, message=FALSE, fig.align='center', out.width="60%", warning=FALSE}
+df <- df %>% 
+  dplyr::mutate(delta_GOS_6 = as.numeric(GOS_M6)- as.numeric(GOS_t0))
+bxp <- ggboxplot(
+  df, x = "Group", y = "delta_GOS_6", color = "Group",
+  ylab = "Difference between GOS M6 and t0", xlab = "Groups", add = "jitter"
+) + stat_compare_means(vjust = -0.4, hjust = -0.5)
+bxp
+```
+\newpage
+
+#### RankinM6
+La pvaleur associé au test de Wilcoxon est de 0.09.
+```{r echo=FALSE, message=FALSE, fig.align='center', out.width="60%", warning=FALSE}
+df <- df %>% 
+  dplyr::mutate(delta_Rankin_6 = as.numeric(Rankin_M6)- as.numeric(Rankin_t0))
+bxp <- ggboxplot(
+  df, x = "Group", y = "delta_Rankin_6", color = "Group",
+  ylab = "Difference between mRankin M6 and t0", xlab = "Groups", add = "jitter"
+) + stat_compare_means(vjust = -0.4, hjust = -0.5)
+bxp
+```
+
+
+#### Delta GOS
+La pvaleur associé au test de Wilcoxon est de 0.009.
+```{r echo=FALSE, message=FALSE, fig.align='center', out.width="60%", warning=FALSE}
+df <- df %>% 
+  dplyr::mutate(delta_GOS = as.numeric(GOS_sortie)- as.numeric(GOS_t0))
+bxp <- ggboxplot(
+  df, x = "Group", y = "delta_GOS", color = "Group",
+  ylab = "Difference between GOS final and t0", xlab = "Groups", add = "jitter"
+) + stat_compare_means(vjust = -0.4, hjust = -0.5)
+bxp
+```
+\newpage
+
+### Delta Rankin
+La pvaleur associé au test de Wilcoxon est de 0.01.
+```{r echo=FALSE, message=FALSE, fig.align='center', out.width="60%", warning=FALSE}
+df <- df %>% 
+  dplyr::mutate(delta_Rankin = as.numeric(Rankin_sortie)- as.numeric(Rankin_t0))
+bxp <- ggboxplot(
+  df, x = "Group", y = "delta_Rankin", color = "Group",
+  ylab = "Difference between mRankin final and t0", xlab = "Groups", add = "jitter"
+) + stat_compare_means(vjust = -0.4, hjust = -0.5)
+bxp
+```
